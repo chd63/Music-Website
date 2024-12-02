@@ -225,6 +225,60 @@ module.exports = {
             }
         });
 
+        /*
+        Endpoint: GET /api/search
+        Description: Retrieves a random song from all songs and streams it to the client
+        */
+        app.get("/api/search", async (req, res) => {
+            const { q } = req.query;
+
+            try {
+
+                if (!q || q.trim() === "") {
+                    return res.status(400).send({ message: "Nothing was searched" });
+                }
+
+                const searchWords = q.split(" ").map(word => word.trim()).filter(Boolean);
+
+                const searchRegex = searchWords.map(word => new RegExp(word, "i")); // "i" for case-insensitive
+
+                const userSongs = await dbUtil.getDocuments(
+                    "songs",
+                    {
+                        $or: [
+                            { title: { $in: searchRegex } },
+                            { description: { $in: searchRegex } }
+                        ]
+                    },
+                    { _id: 1, songId: 1, title: 1, description: 1 }
+                );
+
+                //const userSongs = await dbUtil.getDocuments('songs', {}, { _id: 1, songId: 1,title: 1, description: 1 });
+
+                if (!userSongs || userSongs.length === 0) {
+                    return res.status(404).send({ message: "No songs found" });
+                }
+
+                // get songs in which words match within title
+                
+        
+                // Send back song data to the client
+                return res.status(200).json({
+                    message: "Success",
+                    songs: userSongs.map(song => ({
+                        songId: song._id,
+                        streamId: song.songId,
+                        title: song.title,
+                        description: song.description,
+                    }))
+                });
+                
+            } catch (error) {
+                console.error(error);
+                return res.status(500).send({ message: "Server Error" });
+            }
+        });
+
 
 
         console.log("Songs API routes initialized");

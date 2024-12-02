@@ -7,6 +7,8 @@ function HomePage() {
     const ENDPOINT = process.env.REACT_APP_API_ENDPOINT;
     const [songs, setSongs] = useState([]);
     const [currentSongId, setCurrentSongId] = useState(null);
+    const [query, setQuery] = useState("");
+    const [error, setError] = useState(null);
 
     useEffect(() => {
         const fetchSongs = async () => {
@@ -21,20 +23,56 @@ function HomePage() {
         fetchSongs();
     }, [ENDPOINT]);
 
+    const handleInputChange = (e) => {
+        setQuery(e.target.value);
+    };
+
+    const handleSearch = async () => {
+        if (!query.trim()) {
+            setError('Please enter a search term.');
+            return;
+        }
+
+        try {
+            const response = await axios.get(ENDPOINT + '/api/search', {
+                params: { q: query } 
+            });
+            setSongs(response.data.songs || []); 
+            setError(null);
+        } catch (error) {
+            console.error('Error searching songs:', error);
+            setError('Failed to fetch search results.');
+        }
+    };
+
     return (
         <div className="home-page">
-            <h1>Song List</h1>
+            <div className="searchbar">
+                <input
+                    type="text"
+                    value={query}
+                    onChange={handleInputChange}
+                    placeholder="Search..."
+                />
+                <button onClick={handleSearch}>Search</button>
+            </div>
+            {error && <div className="error-message">{error}</div>}
+            <h1>{query ? 'Search Results' : 'Recent Uploads'}</h1>
             <div className="song-list">
-                {songs.map((song) => (
-                    <div 
-                        key={song.songId} 
-                        className="song-block" 
-                        onClick={() => setCurrentSongId(song.streamId)} // Play song when the box is clicked
-                    >
-                        <h2>{song.title}</h2>
-                        <p>{song.description}</p>
-                    </div>
-                ))}
+                {songs.length > 0 ? (
+                    songs.map((song) => (
+                        <div 
+                            key={song.songId} 
+                            className="song-block" 
+                            onClick={() => setCurrentSongId(song.streamId)} 
+                        >
+                            <h2>{song.title}</h2>
+                            <p>{song.description}</p>
+                        </div>
+                    ))
+                ) : (
+                    <p>No songs found.</p>
+                )}
             </div>
             {currentSongId && <MusicPlayer songId={currentSongId} />}
         </div>
