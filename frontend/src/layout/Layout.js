@@ -25,7 +25,7 @@ function Layout() {
           <h1 className="title">MusicWebsite</h1>
           <div className="links">
             <Link className="nav-link" to="/">Home</Link>
-            <Link className="nav-link" to="/community">Community</Link>
+            
             <Link className="nav-link" to="/upload">Upload</Link>
             <Link className="nav-link" to="/user">
             <img
