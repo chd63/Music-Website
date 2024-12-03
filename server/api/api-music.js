@@ -279,6 +279,205 @@ module.exports = {
             }
         });
 
+        /*
+        Endpoint: POST /api/songs/getsonginfo
+        Description: Gets the information of a song based off of it ids
+        */
+
+        app.post("/api/songs/getsonginfo", async (req, res) => {
+            const { songId } = req.body;
+            try {
+
+                if (!songId) {
+                    return res.status(400).send({ message: "Song ID is required" });
+                }
+
+                const songObjectId = new ObjectId(songId);
+
+                const songInfo = await dbUtil.getDocument(
+                    'songs',
+                    { songId: songObjectId }, 
+                    { projection: { _id: 0, title: 1, description: 1 } } 
+                );
+
+                if (!songInfo) {
+                    return res.status(404).send({ message: "Song not found" });
+                }
+        
+                // Send back song data to the client
+                return res.status(200).json({
+                    message: "Success",
+                    song: {
+                        songId,
+                        ...songInfo
+                    }
+                });
+                
+            } catch (error) {
+                console.error(error);
+                return res.status(500).send({ message: "Server Error" });
+            }
+        });
+
+        /*
+        Endpoint: POST /api/songs/createplaylist
+        Description: Will create a playlist, the playlist will have an id, a user id that it is
+        associated with, as well as a name, and a list (empty at first) of song ids
+        */
+        app.post("/api/songs/createplaylist", async (req, res) => {
+            console.log('Received request to create playlist');
+            console.log('Body:', req.body);
+        
+            const playlistName = req.body.name;
+        
+            // Check if required values are provided
+            if (!playlistName) {
+                console.log("Not all values provided in body: " + req.body);
+                return res.status(400).send({
+                    message: "Playlist name is required"
+                });
+            }
+        
+            if (!req.body.userId) {
+                return res.status(401).send({
+                    message: "User not authenticated"
+                });
+            }
+        
+            const userId = req.body.userId;
+        
+            const playlistData = {
+                userId: userId,
+                name: playlistName,
+                songIds: []  // Empty list of song IDs to start with
+            };
+        
+            try {
+                // Create the playlist document in the database
+                let result = await dbUtil.createDocument("playlists", playlistData);
+        
+                console.log("Playlist successfully created with ID " + result);
+        
+                // Return the response with the new playlist details
+                return res.status(201).send({
+                    message: "Playlist successfully created!",
+                    new_id: result
+                });
+            } catch (error) {
+                console.error("Error creating playlist:", error);
+        
+                // Handle duplicate key or other database-related errors
+                if (error.code === 11000) {
+                    // Handle duplicate key error
+                    if (error.keyPattern && error.keyPattern.name) {
+                        return res.status(400).send({
+                            message: "Playlist name already in use"
+                        });
+                    } else {
+                        return res.status(500).send({
+                            message: "Server Error"
+                        });
+                    }
+                } else {
+                    return res.status(500).send({
+                        message: "Server Error"
+                    });
+                }
+            }
+        });
+
+        /*
+        Endpoint: GET /api/songs/userplaylists
+        Description: Will retrieve playlist data for a user, based on the user ID.
+        */
+        app.post("/api/songs/userplaylists", async (req, res) => {
+            try {
+                console.log('Body:', req.body);
+                const userId = req.body.id;
+
+                if (!userId) {
+                    return res.status(400).send({ message: "User ID is required" });
+                }
+
+                // Get all playlists for the user
+                const userPlaylists = await dbUtil.getDocuments('playlists', { userId: userId }, { _id: 1, name: 1, songIds: 1 });
+
+                if (!userPlaylists || userPlaylists.length === 0) {
+                    return res.status(404).send({ message: "No playlists found for this user" });
+                }
+
+                // Send back playlist data to the client
+                return res.status(200).json({
+                    message: "Success",
+                    playlists: userPlaylists.map(playlist => ({
+                        playlistId: playlist._id.toString(),
+                        name: playlist.name,
+                        songIds: playlist.songIds, // This will return the list of song IDs associated with the playlist
+                    }))
+                });
+                
+            } catch (error) {
+                console.error(error);
+                return res.status(500).send({ message: "Server Error" });
+            }
+        });
+
+        /*
+        Endpoint: POST /api/songs/addsongtoplaylist
+        Description: Adds a songId to a user's playlist. Requires playlistId and songId.
+        */
+        app.post("/api/songs/addsongtoplaylist", async (req, res) => {
+            try {
+                console.log('Body:', req.body);
+                const userId = req.body.userId;
+                const playlistId = req.body.playlistId;
+                const songId = req.body.songId;
+        
+                if (!userId || !playlistId || !songId) {
+                    return res.status(400).send({ message: "User ID, Playlist ID, and Song ID are required" });
+                }
+        
+                // Use `new` to instantiate ObjectId
+                const playlistObjectId = new ObjectId(playlistId); // Correct way to instantiate ObjectId
+        
+                // Find the playlist by ID for the user
+                const playlists = await dbUtil.getDocuments('playlists', { _id: playlistObjectId, userId: userId });
+        
+                if (!Array.isArray(playlists) || playlists.length === 0) {
+                    return res.status(404).send({ message: "Playlist not found for this user" });
+                }
+        
+                const playlist = playlists[0]; // Assuming there is only one playlist found
+        
+                // Now add the songId to the playlist's songIds array
+                const updatedPlaylist = await dbUtil.updateDocument(
+                    'playlists',
+                    { _id: playlistObjectId, userId: userId },
+                    { $addToSet: { songIds: songId } } // Add songId to songIds array, ensuring no duplicates
+                );
+        
+                // Check if the playlist was updated (modifiedCount will be 0 if song was already in the playlist)
+                if (updatedPlaylist.modifiedCount === 0) {
+                    return res.status(200).json({
+                        message: "Song is already in the playlist",
+                        playlistId: playlistId,
+                        songId: songId,
+                    });
+                }
+        
+                // Return a success message along with the updated playlist data
+                return res.status(200).json({
+                    message: "Song added to playlist successfully",
+                    playlistId: playlistId,
+                    songId: songId,
+                });
+        
+            } catch (error) {
+                console.error(error);
+                return res.status(500).send({ message: "Server Error" });
+            }
+        });
+
 
 
         console.log("Songs API routes initialized");
